@@ -41,8 +41,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -62,7 +60,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.myshoppinglist.data.local.entity.StoreInfo
 import com.myshoppinglist.ui.viewmodel.PriceComparison
 import com.myshoppinglist.ui.viewmodel.StoreProductGroup
 import com.myshoppinglist.ui.viewmodel.StoreSearchViewModel
@@ -83,7 +80,7 @@ fun StoreSearchScreen(
     val locationInfo by viewModel.locationInfo.collectAsStateWithLifecycle()
     val locationFailed by viewModel.locationFailed.collectAsStateWithLifecycle()
     val isTripLoading by viewModel.isTripLoading.collectAsStateWithLifecycle()
-    val stores = StoreInfo.forListType(listType)
+    val discoveredStores by viewModel.discoveredStores.collectAsStateWithLifecycle()
     val isConfigured = viewModel.isConfigured
 
     val context = LocalContext.current
@@ -137,31 +134,24 @@ fun StoreSearchScreen(
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.Store,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    "Searching:",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                stores.forEach { store ->
-                    SuggestionChip(
-                        onClick = {},
-                        label = { Text(store.displayName, style = MaterialTheme.typography.labelSmall) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer
-                        )
+            if (discoveredStores.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Store,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "${discoveredStores.size} stores found nearby",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -292,7 +282,7 @@ fun StoreSearchScreen(
                         CircularProgressIndicator()
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            "Comparing prices across ${stores.size} stores...",
+                            "Searching all nearby stores...",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -322,7 +312,7 @@ fun StoreSearchScreen(
                             Button(onClick = { onCompareClick() }) {
                                 Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Compare ${listItems.count { !it.isChecked }} items across ${stores.size} stores")
+                                Text("Compare ${listItems.count { !it.isChecked }} items across all nearby stores")
                             }
                         }
                     }

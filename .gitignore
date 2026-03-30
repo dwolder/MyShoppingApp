@@ -16,3 +16,4 @@ app/build/
 .env
 .env.local
 supabase/.env
+supabase/.temp/

@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import com.myshoppinglist.data.local.entity.GroceryCategory
 import com.myshoppinglist.data.local.entity.ListType
 import com.myshoppinglist.data.local.entity.ShoppingItemEntity
-import com.myshoppinglist.data.local.entity.StoreInfo
 import com.myshoppinglist.data.remote.LocationService
 import com.myshoppinglist.data.remote.ProductSearchService
 import com.myshoppinglist.data.repository.BrandPreference
@@ -18,9 +17,6 @@ import io.github.jan.supabase.functions.functions
 import io.ktor.client.call.body
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -155,32 +151,19 @@ class ShoppingItemViewModel @Inject constructor(
             }
 
             val searchTerm = smartResult?.search_tip?.ifBlank { item.name } ?: item.name
-            val stores = StoreInfo.forListType(listType)
             val postalCode = locationService.getLocation()?.postalCode ?: ""
 
-            val storeResults = coroutineScope {
-                stores.map { store ->
-                    async {
-                        try {
-                            val products = searchService.searchProducts(
-                                query = searchTerm,
-                                storeApiId = store.apiId,
-                                postalCode = postalCode,
-                                brandPreference = brandPref.name
-                            )
-                            val bestPrice = products.minOfOrNull { it.salePrice ?: it.price }
-                            if (bestPrice != null) store.displayName to bestPrice else null
-                        } catch (_: Exception) {
-                            null
-                        }
-                    }
-                }.awaitAll().filterNotNull()
-            }
+            val products = searchService.searchAllStores(
+                query = searchTerm,
+                postalCode = postalCode,
+                brandPreference = brandPref.name
+            )
 
-            if (storeResults.isNotEmpty()) {
-                val (cheapestStore, cheapestPrice) = storeResults.minBy { it.second }
+            if (products.isNotEmpty()) {
+                val cheapest = products.minBy { it.salePrice ?: it.price }
+                val cheapestPrice = cheapest.salePrice ?: cheapest.price
                 _snackbarMessage.tryEmit(
-                    "${item.name}: $${String.format("%.2f", cheapestPrice)} at $cheapestStore"
+                    "${item.name}: $${String.format("%.2f", cheapestPrice)} at ${cheapest.storeName}"
                 )
             }
         } catch (_: Exception) {

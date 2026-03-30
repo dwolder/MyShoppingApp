@@ -14,8 +14,6 @@ import com.myshoppinglist.data.remote.TripPlanResponse
 import com.myshoppinglist.data.repository.ShoppingRepository
 import com.myshoppinglist.data.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -70,6 +68,9 @@ class StoreSearchViewModel @Inject constructor(
     private val _comparisons = MutableStateFlow<List<PriceComparison>>(emptyList())
     val comparisons: StateFlow<List<PriceComparison>> = _comparisons.asStateFlow()
 
+    private val _discoveredStores = MutableStateFlow<List<String>>(emptyList())
+    val discoveredStores: StateFlow<List<String>> = _discoveredStores.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -115,12 +116,10 @@ class StoreSearchViewModel @Inject constructor(
     }
 
     fun compareAllStores() {
-        val stores = StoreInfo.forListType(_listType.value)
-        if (stores.isEmpty()) return
-
         viewModelScope.launch {
             _isLoading.value = true
             _comparisons.value = emptyList()
+            _discoveredStores.value = emptyList()
             _tripPlan.value = null
             _hasSearched.value = true
             _errorMessage.value = null
@@ -136,41 +135,45 @@ class StoreSearchViewModel @Inject constructor(
                 val brandPref = preferencesRepository.brandPreference.first().name
                 val items = listItems.value.filter { !it.isChecked }
                 val results = mutableListOf<PriceComparison>()
+                val allStoreNames = mutableSetOf<String>()
 
                 for (item in items) {
-                    val storeResults = stores.map { store ->
-                        async {
-                            try {
-                                val products = searchService.searchProducts(
-                                    query = item.name,
-                                    storeApiId = store.apiId,
-                                    postalCode = postalCode,
-                                    brandPreference = brandPref
-                                )
-                                StoreProductGroup(
-                                    store = store,
-                                    products = products,
-                                    bestPrice = products.minOfOrNull {
-                                        it.salePrice ?: it.price
-                                    } ?: Double.MAX_VALUE
-                                )
-                            } catch (_: Exception) {
-                                StoreProductGroup(store = store, products = emptyList(), bestPrice = Double.MAX_VALUE)
-                            }
-                        }
-                    }.awaitAll().filter { it.products.isNotEmpty() }
-
-                    if (storeResults.isNotEmpty()) {
-                        results.add(
-                            PriceComparison(
-                                itemName = item.name,
-                                results = storeResults.sortedBy { it.bestPrice }
-                            )
+                    try {
+                        val products = searchService.searchAllStores(
+                            query = item.name,
+                            postalCode = postalCode,
+                            brandPreference = brandPref
                         )
+
+                        if (products.isNotEmpty()) {
+                            val grouped = products
+                                .groupBy { it.storeName }
+                                .map { (storeName, storeProducts) ->
+                                    allStoreNames.add(storeName)
+                                    StoreProductGroup(
+                                        store = StoreInfo(
+                                            id = storeName.lowercase().replace(" ", "_"),
+                                            displayName = storeName,
+                                            apiId = storeName.lowercase().replace(" ", "_"),
+                                            listType = _listType.value
+                                        ),
+                                        products = storeProducts,
+                                        bestPrice = storeProducts.minOf {
+                                            it.salePrice ?: it.price
+                                        }
+                                    )
+                                }
+                                .sortedBy { it.bestPrice }
+
+                            results.add(PriceComparison(itemName = item.name, results = grouped))
+                        }
+                    } catch (_: Exception) {
+                        // Skip items that fail to search
                     }
                 }
 
                 _comparisons.value = results
+                _discoveredStores.value = allStoreNames.sorted()
             } catch (e: Exception) {
                 _errorMessage.value = e.message ?: "Search failed"
             } finally {

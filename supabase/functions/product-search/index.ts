@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 interface SearchRequest {
   query: string;
-  store: string;
+  store?: string;
   postal_code?: string;
   brand_preference?: string;
 }
@@ -25,23 +25,21 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const MERCHANT_ALIASES: Record<string, string[]> = {
-  superstore: ["Real Canadian Superstore"],
-  metro: ["Metro"],
-  freshco: ["FreshCo"],
-  sobeys: ["Sobeys"],
-  homedepot: ["Home Depot"],
-  rona: ["RONA", "RONA & RONA +"],
-};
-
-const DISPLAY_NAMES: Record<string, string> = {
-  superstore: "Real Canadian Superstore",
-  metro: "Metro",
-  freshco: "FreshCo",
-  sobeys: "Sobeys",
-  homedepot: "Home Depot",
-  rona: "RONA",
-};
+const STORE_BRAND_INDICATORS = [
+  "no name",
+  "great value",
+  "selection",
+  "irresistibles",
+  "compliments",
+  "pc ",
+  "president's choice",
+  "kirkland",
+  "exact",
+  "life brand",
+  "equate",
+  "our finest",
+  "sensations by compliments",
+];
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -49,16 +47,17 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { query, store, postal_code, brand_preference }: SearchRequest = await req.json();
+    const body: SearchRequest = await req.json();
+    const { query, postal_code, brand_preference } = body;
 
-    if (!query || !store) {
-      return new Response(JSON.stringify({ error: "query and store are required" }), {
+    if (!query) {
+      return new Response(JSON.stringify({ error: "query is required" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 400,
       });
     }
 
-    let products = await searchFlipp(query, store, postal_code);
+    let products = await searchFlipp(query, postal_code);
     products = applyBrandFilter(products, brand_preference);
 
     return new Response(JSON.stringify(products), {
@@ -76,16 +75,8 @@ serve(async (req: Request) => {
 
 async function searchFlipp(
   query: string,
-  store: string,
   postalCode?: string
 ): Promise<Product[]> {
-  const aliases = MERCHANT_ALIASES[store];
-  if (!aliases) {
-    console.error(`Unknown store: ${store}`);
-    return [];
-  }
-
-  const displayName = DISPLAY_NAMES[store] || store;
   const pc = postalCode || Deno.env.get("FLIPP_POSTAL_CODE") || "M5V1J2";
 
   const response = await fetch(
@@ -107,13 +98,11 @@ async function searchFlipp(
 
   const data = await response.json();
 
-  const matchesMerchant = (name: string): boolean =>
-    aliases.some((alias) => name.toLowerCase().includes(alias.toLowerCase()));
-
   const flyerItems: Product[] = (data.items || [])
-    .filter((item: Record<string, unknown>) =>
-      matchesMerchant(String(item.merchant_name || ""))
-    )
+    .filter((item: Record<string, unknown>) => {
+      const price = Number(item.current_price || 0);
+      return price > 0 && String(item.merchant_name || "").length > 0;
+    })
     .map((item: Record<string, unknown>): Product => {
       const currentPrice = Number(item.current_price || 0);
       const originalPrice = Number(item.original_price || currentPrice);
@@ -132,14 +121,15 @@ async function searchFlipp(
           : item.clipping_image_url
             ? String(item.clipping_image_url)
             : null,
-        store_name: displayName,
+        store_name: String(item.merchant_name || ""),
       };
     });
 
   const ecomItems: Product[] = (data.ecom_items || [])
-    .filter((item: Record<string, unknown>) =>
-      matchesMerchant(String(item.merchant || ""))
-    )
+    .filter((item: Record<string, unknown>) => {
+      const price = Number(item.current_price || 0);
+      return price > 0 && String(item.merchant || "").length > 0;
+    })
     .map((item: Record<string, unknown>): Product => {
       const currentPrice = Number(item.current_price || 0);
       const originalPrice = Number(item.original_price || currentPrice);
@@ -154,19 +144,29 @@ async function searchFlipp(
         is_on_sale: isOnSale,
         size: String(item.description || ""),
         image_url: item.image_url ? String(item.image_url) : null,
-        store_name: displayName,
+        store_name: String(item.merchant || ""),
       };
     });
 
   const combined = [...flyerItems, ...ecomItems];
 
-  combined.sort((a, b) => {
+  const bestPerStore = new Map<string, Product>();
+  for (const product of combined) {
+    const effectivePrice = product.sale_price ?? product.price;
+    const existing = bestPerStore.get(product.store_name);
+    if (!existing || effectivePrice < (existing.sale_price ?? existing.price)) {
+      bestPerStore.set(product.store_name, product);
+    }
+  }
+
+  const results = Array.from(bestPerStore.values());
+  results.sort((a, b) => {
     const priceA = a.sale_price ?? a.price;
     const priceB = b.sale_price ?? b.price;
     return priceA - priceB;
   });
 
-  return combined.slice(0, 10);
+  return results.slice(0, 20);
 }
 
 function buildSizeString(item: Record<string, unknown>): string {
@@ -176,23 +176,6 @@ function buildSizeString(item: Record<string, unknown>): string {
   if (item.sale_story) parts.push(String(item.sale_story));
   return parts.join(" ").trim();
 }
-
-const STORE_BRAND_INDICATORS = [
-  "no name",
-  "great value",
-  "selection",
-  "irresistibles",
-  "compliments",
-  "pc ",
-  "president's choice",
-  "kirkland",
-  "exact",
-  "life brand",
-  "equate",
-  "our finest",
-  "green d",
-  "sensations by compliments",
-];
 
 function isStoreBrand(productName: string): boolean {
   const lower = productName.toLowerCase();

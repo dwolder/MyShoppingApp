@@ -15,7 +15,6 @@ import javax.inject.Singleton
 @Serializable
 data class ProductSearchRequest(
     val query: String,
-    val store: String,
     @SerialName("postal_code")
     val postalCode: String = "",
     @SerialName("brand_preference")
@@ -55,14 +54,11 @@ class ProductSearchService @Inject constructor(
             com.myshoppinglist.BuildConfig.SUPABASE_URL != "https://YOUR_PROJECT_ID.supabase.co"
     }
 
-    suspend fun searchProducts(
+    suspend fun searchAllStores(
         query: String,
-        storeApiId: String,
         postalCode: String = "",
         brandPreference: String = "ALL"
     ): List<StoreProduct> {
-        if (storeApiId.isBlank()) return emptyList()
-
         if (!isConfigured()) {
             throw IllegalStateException("Supabase is not configured. Add SUPABASE_URL and SUPABASE_ANON_KEY to local.properties.")
         }
@@ -71,7 +67,6 @@ class ProductSearchService @Inject constructor(
             ProductSearchRequest.serializer(),
             ProductSearchRequest(
                 query = query,
-                store = storeApiId,
                 postalCode = postalCode,
                 brandPreference = brandPreference
             )
