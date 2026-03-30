@@ -3,7 +3,6 @@ package com.myshoppinglist.data.remote
 import com.myshoppinglist.ui.viewmodel.GroceryStore
 import com.myshoppinglist.ui.viewmodel.StoreProduct
 import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.functions.Functions
 import io.github.jan.supabase.functions.functions
 import io.ktor.client.call.body
 import io.ktor.http.Headers

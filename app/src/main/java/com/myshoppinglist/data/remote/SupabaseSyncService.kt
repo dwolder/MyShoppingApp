@@ -11,6 +11,7 @@ import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.realtime
 import io.github.jan.supabase.realtime.PostgresAction
+import io.github.jan.supabase.postgrest.query.filter.FilterOperator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -155,7 +156,7 @@ class SupabaseSyncService @Inject constructor(
 
                 val changeFlow = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
                     table = "list_items"
-                    filter = "list_id=eq.$listId"
+                    filter("list_id", FilterOperator.EQ, listId)
                 }
 
                 changeFlow.onEach { action ->

@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.myshoppinglist.data.local.entity.GroceryCategory
 import com.myshoppinglist.data.local.entity.ShoppingItemEntity
-import com.myshoppinglist.data.local.entity.ShoppingListEntity
 import com.myshoppinglist.data.repository.ShoppingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
