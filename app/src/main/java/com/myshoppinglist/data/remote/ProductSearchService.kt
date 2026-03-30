@@ -5,8 +5,9 @@ import com.myshoppinglist.ui.viewmodel.StoreProduct
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.functions.functions
 import io.ktor.client.call.body
-import io.ktor.http.Headers
-import io.ktor.http.HttpHeaders
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.content.TextContent
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -57,24 +58,20 @@ class ProductSearchService @Inject constructor(
             throw IllegalStateException("Supabase is not configured.")
         }
 
-        val requestBody = buildJsonObject {
+        val bodyJson = buildJsonObject {
             put("query", query)
             put("postal_code", postalCode)
             put("brand_preference", brandPreference)
-        }
+        }.toString()
 
         Log.d("ProductSearch", "Searching: query=$query postal=$postalCode brand=$brandPreference")
 
-        val response = supabaseClient.functions.invoke(
-            function = "product-search",
-            body = requestBody,
-            headers = Headers.build {
-                append(HttpHeaders.ContentType, "application/json")
-            }
-        )
+        val response = supabaseClient.functions("product-search") {
+            setBody(TextContent(bodyJson, ContentType.Application.Json))
+        }
 
         val responseBody: String = response.body()
-        Log.d("ProductSearch", "Response (first 200): ${responseBody.take(200)}")
+        Log.d("ProductSearch", "Response (first 300): ${responseBody.take(300)}")
 
         if (responseBody.trimStart().startsWith("{")) {
             val errorObj = json.decodeFromString<ErrorResponse>(responseBody)

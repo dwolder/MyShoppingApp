@@ -4,8 +4,9 @@ import com.myshoppinglist.ui.viewmodel.PriceComparison
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.functions.functions
 import io.ktor.client.call.body
-import io.ktor.http.Headers
-import io.ktor.http.HttpHeaders
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.content.TextContent
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
@@ -41,7 +42,7 @@ class TripPlannerService @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun planTrip(comparisons: List<PriceComparison>): TripPlanResponse {
-        val requestBody = buildJsonObject {
+        val bodyJson = buildJsonObject {
             put("comparisons", buildJsonArray {
                 for (comparison in comparisons) {
                     add(buildJsonObject {
@@ -57,15 +58,11 @@ class TripPlannerService @Inject constructor(
                     })
                 }
             })
-        }
+        }.toString()
 
-        val response = supabaseClient.functions.invoke(
-            function = "trip-planner",
-            body = requestBody,
-            headers = Headers.build {
-                append(HttpHeaders.ContentType, "application/json")
-            }
-        )
+        val response = supabaseClient.functions("trip-planner") {
+            setBody(TextContent(bodyJson, ContentType.Application.Json))
+        }
 
         val responseBody: String = response.body()
 

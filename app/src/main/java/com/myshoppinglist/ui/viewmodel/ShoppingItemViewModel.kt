@@ -16,8 +16,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.functions.functions
 import io.ktor.client.call.body
-import io.ktor.http.Headers
-import io.ktor.http.HttpHeaders
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.content.TextContent
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -182,24 +184,20 @@ class ShoppingItemViewModel @Inject constructor(
         categories: List<String>
     ): SmartAddResponse? {
         return try {
-            val requestBody = buildJsonObject {
+            val bodyJson = buildJsonObject {
                 put("name", name)
                 put("list_type", listType.name)
                 put("brand_preference", brandPref.name)
                 putJsonArray("categories") {
-                    for (cat in categories) add(kotlinx.serialization.json.JsonPrimitive(cat))
+                    for (cat in categories) add(JsonPrimitive(cat))
                 }
+            }.toString()
+
+            Log.d("ShoppingItem", "Calling smart-add with: $bodyJson")
+
+            val response = supabaseClient.functions("smart-add") {
+                setBody(TextContent(bodyJson, ContentType.Application.Json))
             }
-
-            Log.d("ShoppingItem", "Calling smart-add with: $requestBody")
-
-            val response = supabaseClient.functions.invoke(
-                function = "smart-add",
-                body = requestBody,
-                headers = Headers.build {
-                    append(HttpHeaders.ContentType, "application/json")
-                }
-            )
 
             val responseBody: String = response.body()
             Log.d("ShoppingItem", "smart-add response: $responseBody")
