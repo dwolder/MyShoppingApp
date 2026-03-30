@@ -5,6 +5,8 @@ import com.myshoppinglist.ui.viewmodel.StoreProduct
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.functions.functions
 import io.ktor.client.call.body
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -66,6 +68,9 @@ class ProductSearchService @Inject constructor(
         val response = supabaseClient.functions.invoke(
             function = "product-search",
             body = requestBody,
+            headers = Headers.build {
+                append(HttpHeaders.ContentType, "application/json")
+            }
         )
 
         val responseBody: String = response.body()

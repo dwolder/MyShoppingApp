@@ -16,6 +16,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.functions.functions
 import io.ktor.client.call.body
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -194,6 +196,9 @@ class ShoppingItemViewModel @Inject constructor(
             val response = supabaseClient.functions.invoke(
                 function = "smart-add",
                 body = requestBody,
+                headers = Headers.build {
+                    append(HttpHeaders.ContentType, "application/json")
+                }
             )
 
             val responseBody: String = response.body()
