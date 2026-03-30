@@ -20,6 +20,7 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -157,22 +158,24 @@ class ShoppingItemViewModel @Inject constructor(
             val stores = StoreInfo.forListType(listType)
             val postalCode = locationService.getLocation()?.postalCode ?: ""
 
-            val storeResults = stores.map { store ->
-                async {
-                    try {
-                        val products = searchService.searchProducts(
-                            query = searchTerm,
-                            storeApiId = store.apiId,
-                            postalCode = postalCode,
-                            brandPreference = brandPref.name
-                        )
-                        val bestPrice = products.minOfOrNull { it.salePrice ?: it.price }
-                        if (bestPrice != null) store.displayName to bestPrice else null
-                    } catch (_: Exception) {
-                        null
+            val storeResults = coroutineScope {
+                stores.map { store ->
+                    async {
+                        try {
+                            val products = searchService.searchProducts(
+                                query = searchTerm,
+                                storeApiId = store.apiId,
+                                postalCode = postalCode,
+                                brandPreference = brandPref.name
+                            )
+                            val bestPrice = products.minOfOrNull { it.salePrice ?: it.price }
+                            if (bestPrice != null) store.displayName to bestPrice else null
+                        } catch (_: Exception) {
+                            null
+                        }
                     }
-                }
-            }.awaitAll().filterNotNull()
+                }.awaitAll().filterNotNull()
+            }
 
             if (storeResults.isNotEmpty()) {
                 val (cheapestStore, cheapestPrice) = storeResults.minBy { it.second }
