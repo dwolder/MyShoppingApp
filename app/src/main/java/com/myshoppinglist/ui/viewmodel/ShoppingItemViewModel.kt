@@ -1,5 +1,6 @@
 package com.myshoppinglist.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,8 +16,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.functions.functions
 import io.ktor.client.call.body
-import io.ktor.http.Headers
-import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -30,19 +29,14 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import javax.inject.Inject
 
 data class CategoryGroup(
     val category: GroceryCategory,
     val items: List<ShoppingItemEntity>
-)
-
-@Serializable
-private data class SmartAddRequest(
-    val name: String,
-    val list_type: String,
-    val brand_preference: String,
-    val categories: List<String>
 )
 
 @Serializable
@@ -134,40 +128,48 @@ class ShoppingItemViewModel @Inject constructor(
 
             if (searchService.isConfigured()) {
                 smartAddAndSearch(item)
+            } else {
+                Log.w("ShoppingItem", "Supabase not configured, skipping smart-add/search")
             }
         }
     }
 
     private suspend fun smartAddAndSearch(item: ShoppingItemEntity) {
         try {
+            Log.d("ShoppingItem", "smartAddAndSearch starting for: ${item.name}")
+
             val listType = _listType.value
             val brandPref = preferencesRepository.brandPreference.first()
             val categories = GroceryCategory.forListType(listType).map { it.displayName }
 
             val smartResult = callSmartAdd(item.name, listType, brandPref, categories)
+            Log.d("ShoppingItem", "smart-add result: category=${smartResult?.category}, tip=${smartResult?.search_tip}")
 
             if (smartResult != null && smartResult.category != item.category) {
                 repository.updateItem(item.copy(category = smartResult.category))
+                Log.d("ShoppingItem", "Updated category to: ${smartResult.category}")
             }
 
             val searchTerm = smartResult?.search_tip?.ifBlank { item.name } ?: item.name
             val postalCode = locationService.getLocation()?.postalCode ?: ""
+            Log.d("ShoppingItem", "Searching: term=$searchTerm postal=$postalCode brand=${brandPref.name}")
 
             val products = searchService.searchAllStores(
                 query = searchTerm,
                 postalCode = postalCode,
                 brandPreference = brandPref.name
             )
+            Log.d("ShoppingItem", "Search returned ${products.size} products")
 
             if (products.isNotEmpty()) {
                 val cheapest = products.minBy { it.salePrice ?: it.price }
                 val cheapestPrice = cheapest.salePrice ?: cheapest.price
-                _snackbarMessage.tryEmit(
-                    "${item.name}: $${String.format("%.2f", cheapestPrice)} at ${cheapest.storeName}"
-                )
+                val msg = "${item.name}: $${String.format("%.2f", cheapestPrice)} at ${cheapest.storeName}"
+                Log.d("ShoppingItem", "Snackbar: $msg")
+                _snackbarMessage.tryEmit(msg)
             }
-        } catch (_: Exception) {
-            // Item is saved regardless; silently ignore search/smart-add errors
+        } catch (e: Exception) {
+            Log.e("ShoppingItem", "smartAddAndSearch failed", e)
         }
     }
 
@@ -178,27 +180,27 @@ class ShoppingItemViewModel @Inject constructor(
         categories: List<String>
     ): SmartAddResponse? {
         return try {
-            val requestBody = json.encodeToString(
-                SmartAddRequest.serializer(),
-                SmartAddRequest(
-                    name = name,
-                    list_type = listType.name,
-                    brand_preference = brandPref.name,
-                    categories = categories
-                )
-            )
+            val requestBody = buildJsonObject {
+                put("name", name)
+                put("list_type", listType.name)
+                put("brand_preference", brandPref.name)
+                putJsonArray("categories") {
+                    for (cat in categories) add(kotlinx.serialization.json.JsonPrimitive(cat))
+                }
+            }
+
+            Log.d("ShoppingItem", "Calling smart-add with: $requestBody")
 
             val response = supabaseClient.functions.invoke(
                 function = "smart-add",
                 body = requestBody,
-                headers = Headers.build {
-                    append(HttpHeaders.ContentType, "application/json")
-                }
             )
 
             val responseBody: String = response.body()
+            Log.d("ShoppingItem", "smart-add response: $responseBody")
             json.decodeFromString<SmartAddResponse>(responseBody)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e("ShoppingItem", "callSmartAdd failed", e)
             null
         }
     }

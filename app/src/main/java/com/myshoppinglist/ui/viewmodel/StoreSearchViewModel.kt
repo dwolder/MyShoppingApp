@@ -3,6 +3,7 @@ package com.myshoppinglist.ui.viewmodel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.util.Log
 import com.myshoppinglist.data.local.entity.ListType
 import com.myshoppinglist.data.local.entity.ShoppingItemEntity
 import com.myshoppinglist.data.local.entity.StoreInfo
@@ -137,6 +138,8 @@ class StoreSearchViewModel @Inject constructor(
                 val results = mutableListOf<PriceComparison>()
                 val allStoreNames = mutableSetOf<String>()
 
+                Log.d("StoreSearch", "Searching ${items.size} items, postal=$postalCode, brand=$brandPref")
+
                 for (item in items) {
                     try {
                         val products = searchService.searchAllStores(
@@ -144,6 +147,7 @@ class StoreSearchViewModel @Inject constructor(
                             postalCode = postalCode,
                             brandPreference = brandPref
                         )
+                        Log.d("StoreSearch", "${item.name}: ${products.size} products found")
 
                         if (products.isNotEmpty()) {
                             val grouped = products
@@ -167,8 +171,8 @@ class StoreSearchViewModel @Inject constructor(
 
                             results.add(PriceComparison(itemName = item.name, results = grouped))
                         }
-                    } catch (_: Exception) {
-                        // Skip items that fail to search
+                    } catch (e: Exception) {
+                        Log.e("StoreSearch", "Failed searching for ${item.name}", e)
                     }
                 }
 

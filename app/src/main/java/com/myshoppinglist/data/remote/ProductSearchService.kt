@@ -1,25 +1,17 @@
 package com.myshoppinglist.data.remote
 
+import android.util.Log
 import com.myshoppinglist.ui.viewmodel.StoreProduct
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.functions.functions
 import io.ktor.client.call.body
-import io.ktor.http.Headers
-import io.ktor.http.HttpHeaders
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import javax.inject.Inject
 import javax.inject.Singleton
-
-@Serializable
-data class ProductSearchRequest(
-    val query: String,
-    @SerialName("postal_code")
-    val postalCode: String = "",
-    @SerialName("brand_preference")
-    val brandPreference: String = "ALL"
-)
 
 @Serializable
 data class ProductResponse(
@@ -60,37 +52,36 @@ class ProductSearchService @Inject constructor(
         brandPreference: String = "ALL"
     ): List<StoreProduct> {
         if (!isConfigured()) {
-            throw IllegalStateException("Supabase is not configured. Add SUPABASE_URL and SUPABASE_ANON_KEY to local.properties.")
+            throw IllegalStateException("Supabase is not configured.")
         }
 
-        val requestBody = json.encodeToString(
-            ProductSearchRequest.serializer(),
-            ProductSearchRequest(
-                query = query,
-                postalCode = postalCode,
-                brandPreference = brandPreference
-            )
-        )
+        val requestBody = buildJsonObject {
+            put("query", query)
+            put("postal_code", postalCode)
+            put("brand_preference", brandPreference)
+        }
+
+        Log.d("ProductSearch", "Searching: query=$query postal=$postalCode brand=$brandPreference")
 
         val response = supabaseClient.functions.invoke(
             function = "product-search",
             body = requestBody,
-            headers = Headers.build {
-                append(HttpHeaders.ContentType, "application/json")
-            }
         )
 
         val responseBody: String = response.body()
+        Log.d("ProductSearch", "Response (first 200): ${responseBody.take(200)}")
 
         if (responseBody.trimStart().startsWith("{")) {
             val errorObj = json.decodeFromString<ErrorResponse>(responseBody)
             if (errorObj.error != null) {
+                Log.e("ProductSearch", "Edge function error: ${errorObj.error}")
                 throw IllegalStateException("Search failed: ${errorObj.error}")
             }
             return emptyList()
         }
 
         val products = json.decodeFromString<List<ProductResponse>>(responseBody)
+        Log.d("ProductSearch", "Got ${products.size} products")
 
         return products.map { product ->
             StoreProduct(
