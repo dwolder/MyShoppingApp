@@ -67,6 +67,12 @@ class StoreSearchViewModel @Inject constructor(
     private val _hasSearched = MutableStateFlow(false)
     val hasSearched: StateFlow<Boolean> = _hasSearched.asStateFlow()
 
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    val isConfigured: Boolean
+        get() = searchService.isConfigured()
+
     init {
         viewModelScope.launch {
             val list = repository.getListById(listId)
@@ -84,43 +90,49 @@ class StoreSearchViewModel @Inject constructor(
             _isLoading.value = true
             _comparisons.value = emptyList()
             _hasSearched.value = true
+            _errorMessage.value = null
 
-            val items = listItems.value.filter { !it.isChecked }
-            val results = mutableListOf<PriceComparison>()
+            try {
+                val items = listItems.value.filter { !it.isChecked }
+                val results = mutableListOf<PriceComparison>()
 
-            for (item in items) {
-                val storeResults = stores.map { store ->
-                    async {
-                        try {
-                            val products = searchService.searchProducts(
-                                query = item.name,
-                                storeApiId = store.apiId
-                            )
-                            StoreProductGroup(
-                                store = store,
-                                products = products,
-                                bestPrice = products.minOfOrNull {
-                                    it.salePrice ?: it.price
-                                } ?: Double.MAX_VALUE
-                            )
-                        } catch (_: Exception) {
-                            StoreProductGroup(store = store, products = emptyList(), bestPrice = Double.MAX_VALUE)
+                for (item in items) {
+                    val storeResults = stores.map { store ->
+                        async {
+                            try {
+                                val products = searchService.searchProducts(
+                                    query = item.name,
+                                    storeApiId = store.apiId
+                                )
+                                StoreProductGroup(
+                                    store = store,
+                                    products = products,
+                                    bestPrice = products.minOfOrNull {
+                                        it.salePrice ?: it.price
+                                    } ?: Double.MAX_VALUE
+                                )
+                            } catch (_: Exception) {
+                                StoreProductGroup(store = store, products = emptyList(), bestPrice = Double.MAX_VALUE)
+                            }
                         }
-                    }
-                }.awaitAll().filter { it.products.isNotEmpty() }
+                    }.awaitAll().filter { it.products.isNotEmpty() }
 
-                if (storeResults.isNotEmpty()) {
-                    results.add(
-                        PriceComparison(
-                            itemName = item.name,
-                            results = storeResults.sortedBy { it.bestPrice }
+                    if (storeResults.isNotEmpty()) {
+                        results.add(
+                            PriceComparison(
+                                itemName = item.name,
+                                results = storeResults.sortedBy { it.bestPrice }
+                            )
                         )
-                    )
+                    }
                 }
-            }
 
-            _comparisons.value = results
-            _isLoading.value = false
+                _comparisons.value = results
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "Search failed"
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 }

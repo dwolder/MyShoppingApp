@@ -43,6 +43,11 @@ class ProductSearchService @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    fun isConfigured(): Boolean {
+        return com.myshoppinglist.BuildConfig.SUPABASE_URL.isNotBlank() &&
+            com.myshoppinglist.BuildConfig.SUPABASE_URL != "https://YOUR_PROJECT_ID.supabase.co"
+    }
+
     suspend fun searchProducts(
         query: String,
         storeApiId: String,
@@ -50,42 +55,42 @@ class ProductSearchService @Inject constructor(
     ): List<StoreProduct> {
         if (storeApiId.isBlank()) return emptyList()
 
-        return try {
-            val requestBody = json.encodeToString(
-                ProductSearchRequest.serializer(),
-                ProductSearchRequest(
-                    query = query,
-                    store = storeApiId,
-                    postalCode = postalCode
-                )
+        if (!isConfigured()) {
+            throw IllegalStateException("Supabase is not configured. Add SUPABASE_URL and SUPABASE_ANON_KEY to local.properties.")
+        }
+
+        val requestBody = json.encodeToString(
+            ProductSearchRequest.serializer(),
+            ProductSearchRequest(
+                query = query,
+                store = storeApiId,
+                postalCode = postalCode
             )
+        )
 
-            val response = supabaseClient.functions.invoke(
-                function = "product-search",
-                body = requestBody,
-                headers = Headers.build {
-                    append(HttpHeaders.ContentType, "application/json")
-                }
-            )
-
-            val responseBody: String = response.body()
-            val products = json.decodeFromString<List<ProductResponse>>(responseBody)
-
-            products.map { product ->
-                StoreProduct(
-                    id = product.id,
-                    name = product.name,
-                    brand = product.brand,
-                    price = product.price,
-                    salePrice = product.salePrice,
-                    isOnSale = product.isOnSale,
-                    size = product.size,
-                    imageUrl = product.imageUrl,
-                    storeName = product.storeName
-                )
+        val response = supabaseClient.functions.invoke(
+            function = "product-search",
+            body = requestBody,
+            headers = Headers.build {
+                append(HttpHeaders.ContentType, "application/json")
             }
-        } catch (_: Exception) {
-            emptyList()
+        )
+
+        val responseBody: String = response.body()
+        val products = json.decodeFromString<List<ProductResponse>>(responseBody)
+
+        return products.map { product ->
+            StoreProduct(
+                id = product.id,
+                name = product.name,
+                brand = product.brand,
+                price = product.price,
+                salePrice = product.salePrice,
+                isOnSale = product.isOnSale,
+                size = product.size,
+                imageUrl = product.imageUrl,
+                storeName = product.storeName
+            )
         }
     }
 }

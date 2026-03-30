@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +57,9 @@ fun AuthScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    val isConfigured = com.myshoppinglist.BuildConfig.SUPABASE_URL.isNotBlank() &&
+        com.myshoppinglist.BuildConfig.SUPABASE_URL != "https://YOUR_PROJECT_ID.supabase.co"
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -77,6 +81,29 @@ fun AuthScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            if (!isConfigured) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Supabase Not Configured",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "To create an account and sync lists, add your Supabase credentials to local.properties.\n\nSee README.md for setup instructions.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                return@Column
+            }
+
             Icon(
                 Icons.Default.ShoppingCart,
                 contentDescription = null,

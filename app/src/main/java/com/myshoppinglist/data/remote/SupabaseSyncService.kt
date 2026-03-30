@@ -3,15 +3,14 @@ package com.myshoppinglist.data.remote
 import com.myshoppinglist.data.local.dao.ShoppingItemDao
 import com.myshoppinglist.data.local.dao.ShoppingListDao
 import com.myshoppinglist.data.local.entity.ShoppingItemEntity
-import com.myshoppinglist.data.local.entity.ShoppingListEntity
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.filter.FilterOperator
+import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.realtime
-import io.github.jan.supabase.realtime.PostgresAction
-import io.github.jan.supabase.postgrest.query.filter.FilterOperator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -106,7 +105,7 @@ class SupabaseSyncService @Inject constructor(
                     localId = list.id
                 )
 
-                val result = supabaseClient.postgrest["shopping_lists"]
+                supabaseClient.postgrest["shopping_lists"]
                     .upsert(supabaseList) {
                         onConflict = "local_id"
                     }
