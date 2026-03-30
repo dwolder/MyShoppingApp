@@ -3,6 +3,7 @@ package com.myshoppinglist.data.remote
 import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Geocoder
+import android.location.Location
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
@@ -29,10 +30,10 @@ class LocationService @Inject constructor(
     suspend fun getLocation(): LocationInfo? {
         cachedLocation?.let { return it }
 
-        val location = suspendCancellableCoroutine { cont ->
+        val location: Location = suspendCancellableCoroutine<Location?> { cont ->
             val cts = CancellationTokenSource()
             fusedClient.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, cts.token)
-                .addOnSuccessListener { loc ->
+                .addOnSuccessListener { loc: Location? ->
                     cont.resume(loc)
                 }
                 .addOnFailureListener {
