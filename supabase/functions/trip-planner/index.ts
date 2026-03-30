@@ -37,6 +37,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+let rateLimitedUntil = 0;
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -44,15 +46,6 @@ serve(async (req: Request) => {
 
   try {
     const apiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 500,
-        }
-      );
-    }
 
     const { comparisons }: TripPlanRequest = await req.json();
 
@@ -68,38 +61,14 @@ serve(async (req: Request) => {
 
     const plan = buildOptimalPlan(comparisons);
 
-    const prompt = buildGeminiPrompt(comparisons, plan);
+    const now = Date.now();
+    const shouldCallGemini = apiKey && now >= rateLimitedUntil;
 
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 1024,
-          },
-        }),
+    if (shouldCallGemini) {
+      const summary = await fetchGeminiSummary(apiKey!, comparisons, plan);
+      if (summary) {
+        plan.summary = summary;
       }
-    );
-
-    if (!geminiResponse.ok) {
-      const errBody = await geminiResponse.text();
-      console.error(`Gemini API error ${geminiResponse.status}: ${errBody.substring(0, 300)}`);
-      return new Response(JSON.stringify(plan), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const geminiData = await geminiResponse.json();
-    const text =
-      geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-    const summary = text.trim();
-    if (summary) {
-      plan.summary = summary;
     }
 
     return new Response(JSON.stringify(plan), {
@@ -114,6 +83,45 @@ serve(async (req: Request) => {
     });
   }
 });
+
+async function fetchGeminiSummary(
+  apiKey: string,
+  comparisons: TripItemComparison[],
+  plan: TripPlanResponse
+): Promise<string | null> {
+  const prompt = buildGeminiPrompt(comparisons, plan);
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 200,
+        },
+      }),
+    }
+  );
+
+  if (response.status === 429) {
+    rateLimitedUntil = Date.now() + 60_000;
+    console.error("Gemini 429 -- backing off for 60s");
+    return null;
+  }
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    console.error(`Gemini ${response.status}: ${errBody.substring(0, 200)}`);
+    return null;
+  }
+
+  const data = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  return text.trim() || null;
+}
 
 function buildOptimalPlan(
   comparisons: TripItemComparison[]
@@ -172,11 +180,12 @@ function buildOptimalPlan(
   stores.sort((a, b) => b.items.length - a.items.length);
   total = Math.round(total * 100) / 100;
 
-  return {
-    stores,
-    total,
-    summary: `Shop at ${stores.length} store${stores.length !== 1 ? "s" : ""} for a total of $${total.toFixed(2)}.`,
-  };
+  const storeList = stores
+    .map((s) => `${s.name} (${s.items.length} item${s.items.length !== 1 ? "s" : ""}, $${s.subtotal.toFixed(2)})`)
+    .join(", ");
+  const summary = `Shop at ${stores.length} store${stores.length !== 1 ? "s" : ""}: ${storeList}. Estimated total: $${total.toFixed(2)}.`;
+
+  return { stores, total, summary };
 }
 
 function buildGeminiPrompt(
