@@ -37,6 +37,11 @@ data class ProductResponse(
     val storeName: String = ""
 )
 
+@Serializable
+data class ErrorResponse(
+    val error: String? = null
+)
+
 @Singleton
 class ProductSearchService @Inject constructor(
     private val supabaseClient: SupabaseClient
@@ -77,6 +82,15 @@ class ProductSearchService @Inject constructor(
         )
 
         val responseBody: String = response.body()
+
+        if (responseBody.trimStart().startsWith("{")) {
+            val errorObj = json.decodeFromString<ErrorResponse>(responseBody)
+            if (errorObj.error != null) {
+                throw IllegalStateException("Search failed: ${errorObj.error}")
+            }
+            return emptyList()
+        }
+
         val products = json.decodeFromString<List<ProductResponse>>(responseBody)
 
         return products.map { product ->
