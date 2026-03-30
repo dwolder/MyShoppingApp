@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.myshoppinglist.data.local.entity.GroceryCategory
+import com.myshoppinglist.data.local.entity.ListType
 import com.myshoppinglist.data.local.entity.ShoppingItemEntity
 import com.myshoppinglist.data.repository.ShoppingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -32,6 +33,9 @@ class ShoppingItemViewModel @Inject constructor(
 
     private val _listName = MutableStateFlow("")
     val listName: StateFlow<String> = _listName.asStateFlow()
+
+    private val _listType = MutableStateFlow(ListType.GROCERY)
+    val listType: StateFlow<ListType> = _listType.asStateFlow()
 
     private val _showAddDialog = MutableStateFlow(false)
     val showAddDialog: StateFlow<Boolean> = _showAddDialog.asStateFlow()
@@ -67,6 +71,7 @@ class ShoppingItemViewModel @Inject constructor(
         viewModelScope.launch {
             val list = repository.getListById(listId)
             _listName.value = list?.name ?: "Shopping List"
+            _listType.value = ListType.fromName(list?.listType ?: ListType.GROCERY.name)
         }
     }
 

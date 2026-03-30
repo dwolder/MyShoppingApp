@@ -8,6 +8,7 @@ data class ShoppingListEntity(
     @PrimaryKey
     val id: String,
     val name: String,
+    val listType: String = ListType.GROCERY.name,
     val familyId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),

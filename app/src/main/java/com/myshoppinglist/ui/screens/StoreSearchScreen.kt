@@ -18,19 +18,22 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CompareArrows
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Store
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -44,8 +47,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.myshoppinglist.ui.viewmodel.GroceryStore
+import com.myshoppinglist.data.local.entity.StoreInfo
+import com.myshoppinglist.ui.viewmodel.PriceComparison
 import com.myshoppinglist.ui.viewmodel.StoreProduct
+import com.myshoppinglist.ui.viewmodel.StoreProductGroup
 import com.myshoppinglist.ui.viewmodel.StoreSearchViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,15 +59,17 @@ fun StoreSearchScreen(
     onNavigateBack: () -> Unit,
     viewModel: StoreSearchViewModel = hiltViewModel()
 ) {
-    val selectedStore by viewModel.selectedStore.collectAsStateWithLifecycle()
-    val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
+    val comparisons by viewModel.comparisons.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val listItems by viewModel.listItems.collectAsStateWithLifecycle()
+    val listType by viewModel.listType.collectAsStateWithLifecycle()
+    val hasSearched by viewModel.hasSearched.collectAsStateWithLifecycle()
+    val stores = StoreInfo.forListType(listType)
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Find in Store") },
+                title = { Text("Compare Prices") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
@@ -79,12 +86,36 @@ fun StoreSearchScreen(
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            StoreSelector(
-                selectedStore = selectedStore,
-                onStoreSelected = { viewModel.selectStore(it) }
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Store,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "Searching:",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                stores.forEach { store ->
+                    SuggestionChip(
+                        onClick = {},
+                        label = { Text(store.displayName, style = MaterialTheme.typography.labelSmall) },
+                        colors = SuggestionChipDefaults.suggestionChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    )
+                }
+            }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             if (isLoading) {
                 Box(
@@ -95,13 +126,42 @@ fun StoreSearchScreen(
                         CircularProgressIndicator()
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            "Searching ${selectedStore.displayName}...",
+                            "Comparing prices across ${stores.size} stores...",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-            } else if (searchResults.isEmpty() && selectedStore != GroceryStore.NONE) {
+            } else if (!hasSearched) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.CompareArrows,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            if (listItems.isEmpty()) "Your list is empty"
+                            else "Find the cheapest prices for your list",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (listItems.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(onClick = { viewModel.compareAllStores() }) {
+                                Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Compare ${listItems.count { !it.isChecked }} items across ${stores.size} stores")
+                            }
+                        }
+                    }
+                }
+            } else if (comparisons.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -115,30 +175,24 @@ fun StoreSearchScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            if (listItems.isEmpty()) "Your list is empty"
-                            else "Select a store to search",
+                            "No products found",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "Try different item names or check your connection",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                     }
                 }
             } else {
                 LazyColumn(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    searchResults.forEach { (itemName, products) ->
-                        item(key = "header_$itemName") {
-                            Text(
-                                text = itemName,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(top = 8.dp)
-                            )
-                        }
-                        items(products, key = { it.id }) { product ->
-                            ProductCard(product = product)
-                        }
+                    items(comparisons, key = { it.itemName }) { comparison ->
+                        ComparisonCard(comparison)
                     }
                 }
             }
@@ -147,42 +201,55 @@ fun StoreSearchScreen(
 }
 
 @Composable
-private fun StoreSelector(
-    selectedStore: GroceryStore,
-    onStoreSelected: (GroceryStore) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+private fun ComparisonCard(comparison: PriceComparison) {
+    val cheapestPrice = comparison.results.firstOrNull()?.bestPrice ?: Double.MAX_VALUE
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        shape = RoundedCornerShape(16.dp)
     ) {
-        GroceryStore.entries.filter { it != GroceryStore.NONE }.forEach { store ->
-            FilterChip(
-                selected = selectedStore == store,
-                onClick = { onStoreSelected(store) },
-                label = { Text(store.displayName, maxLines = 1) },
-                leadingIcon = {
-                    if (selectedStore == store) {
-                        Icon(Icons.Default.Store, null, modifier = Modifier.size(16.dp))
-                    }
-                },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = comparison.itemName,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
             )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            comparison.results.forEachIndexed { index, storeGroup ->
+                val isCheapest = index == 0 && comparison.results.size > 1
+                StoreResultRow(
+                    storeGroup = storeGroup,
+                    isCheapest = isCheapest
+                )
+                if (index < comparison.results.lastIndex) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun ProductCard(product: StoreProduct) {
+private fun StoreResultRow(
+    storeGroup: StoreProductGroup,
+    isCheapest: Boolean
+) {
+    val bestProduct = storeGroup.products.minByOrNull { it.salePrice ?: it.price }
+        ?: return
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
+            containerColor = if (isCheapest)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+            else
+                MaterialTheme.colorScheme.surfaceContainer
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -193,51 +260,64 @@ private fun ProductCard(product: StoreProduct) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = product.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (product.brand.isNotBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isCheapest) {
+                        Icon(
+                            Icons.Default.EmojiEvents,
+                            contentDescription = "Best price",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
                     Text(
-                        text = product.brand,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = storeGroup.store.displayName,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isCheapest) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isCheapest) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface
                     )
                 }
-                if (product.size.isNotBlank()) {
+                Text(
+                    text = bestProduct.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (bestProduct.brand.isNotBlank()) {
                     Text(
-                        text = product.size,
+                        text = bestProduct.brand,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                 }
             }
+
             Spacer(modifier = Modifier.width(12.dp))
+
             Column(horizontalAlignment = Alignment.End) {
-                if (product.isOnSale && product.salePrice != null) {
+                if (bestProduct.isOnSale && bestProduct.salePrice != null) {
                     Text(
-                        text = "$${String.format("%.2f", product.price)}",
+                        text = "$${String.format("%.2f", bestProduct.price)}",
                         style = MaterialTheme.typography.bodySmall,
                         textDecoration = TextDecoration.LineThrough,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "$${String.format("%.2f", product.salePrice)}",
+                        text = "$${String.format("%.2f", bestProduct.salePrice)}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.error
                     )
                 } else {
                     Text(
-                        text = "$${String.format("%.2f", product.price)}",
+                        text = "$${String.format("%.2f", bestProduct.price)}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
-                AnimatedVisibility(visible = product.isOnSale) {
+                AnimatedVisibility(visible = bestProduct.isOnSale) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             Icons.Default.LocalOffer,

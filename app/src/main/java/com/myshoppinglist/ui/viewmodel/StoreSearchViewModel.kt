@@ -3,10 +3,14 @@ package com.myshoppinglist.ui.viewmodel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.myshoppinglist.data.local.entity.ListType
 import com.myshoppinglist.data.local.entity.ShoppingItemEntity
-import com.myshoppinglist.data.remote.GrocerySearchService
+import com.myshoppinglist.data.local.entity.StoreInfo
+import com.myshoppinglist.data.remote.ProductSearchService
 import com.myshoppinglist.data.repository.ShoppingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,14 +18,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-
-enum class GroceryStore(val displayName: String, val apiId: String) {
-    NONE("None", ""),
-    SUPERSTORE("Superstore", "superstore"),
-    METRO("Metro", "metro"),
-    FRESHCO("FreshCo", "freshco"),
-    SOBEYS("Sobeys", "sobeys");
-}
 
 data class StoreProduct(
     val id: String,
@@ -35,10 +31,21 @@ data class StoreProduct(
     val storeName: String = ""
 )
 
+data class PriceComparison(
+    val itemName: String,
+    val results: List<StoreProductGroup>
+)
+
+data class StoreProductGroup(
+    val store: StoreInfo,
+    val products: List<StoreProduct>,
+    val bestPrice: Double
+)
+
 @HiltViewModel
 class StoreSearchViewModel @Inject constructor(
     private val repository: ShoppingRepository,
-    private val grocerySearchService: GrocerySearchService,
+    private val searchService: ProductSearchService,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -48,47 +55,71 @@ class StoreSearchViewModel @Inject constructor(
     val listItems: StateFlow<List<ShoppingItemEntity>> = repository.getItemsByListId(listId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _selectedStore = MutableStateFlow(GroceryStore.NONE)
-    val selectedStore: StateFlow<GroceryStore> = _selectedStore.asStateFlow()
+    private val _listType = MutableStateFlow(ListType.GROCERY)
+    val listType: StateFlow<ListType> = _listType.asStateFlow()
 
-    private val _searchResults = MutableStateFlow<Map<String, List<StoreProduct>>>(emptyMap())
-    val searchResults: StateFlow<Map<String, List<StoreProduct>>> = _searchResults.asStateFlow()
+    private val _comparisons = MutableStateFlow<List<PriceComparison>>(emptyList())
+    val comparisons: StateFlow<List<PriceComparison>> = _comparisons.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    fun selectStore(store: GroceryStore) {
-        _selectedStore.value = store
-        if (store != GroceryStore.NONE) {
-            searchAllItems(store)
-        } else {
-            _searchResults.value = emptyMap()
+    private val _hasSearched = MutableStateFlow(false)
+    val hasSearched: StateFlow<Boolean> = _hasSearched.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val list = repository.getListById(listId)
+            if (list != null) {
+                _listType.value = ListType.fromName(list.listType)
+            }
         }
     }
 
-    private fun searchAllItems(store: GroceryStore) {
+    fun compareAllStores() {
+        val stores = StoreInfo.forListType(_listType.value)
+        if (stores.isEmpty()) return
+
         viewModelScope.launch {
             _isLoading.value = true
-            _searchResults.value = emptyMap()
+            _comparisons.value = emptyList()
+            _hasSearched.value = true
 
             val items = listItems.value.filter { !it.isChecked }
-            val results = mutableMapOf<String, List<StoreProduct>>()
+            val results = mutableListOf<PriceComparison>()
 
             for (item in items) {
-                try {
-                    val products = grocerySearchService.searchProducts(
-                        query = item.name,
-                        store = store
-                    )
-                    if (products.isNotEmpty()) {
-                        results[item.name] = products
+                val storeResults = stores.map { store ->
+                    async {
+                        try {
+                            val products = searchService.searchProducts(
+                                query = item.name,
+                                storeApiId = store.apiId
+                            )
+                            StoreProductGroup(
+                                store = store,
+                                products = products,
+                                bestPrice = products.minOfOrNull {
+                                    it.salePrice ?: it.price
+                                } ?: Double.MAX_VALUE
+                            )
+                        } catch (_: Exception) {
+                            StoreProductGroup(store = store, products = emptyList(), bestPrice = Double.MAX_VALUE)
+                        }
                     }
-                } catch (_: Exception) {
-                    // Graceful degradation: skip items that fail
+                }.awaitAll().filter { it.products.isNotEmpty() }
+
+                if (storeResults.isNotEmpty()) {
+                    results.add(
+                        PriceComparison(
+                            itemName = item.name,
+                            results = storeResults.sortedBy { it.bestPrice }
+                        )
+                    )
                 }
             }
 
-            _searchResults.value = results
+            _comparisons.value = results
             _isLoading.value = false
         }
     }

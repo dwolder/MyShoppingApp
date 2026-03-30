@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.myshoppinglist.data.local.entity.GroceryCategory
+import com.myshoppinglist.data.local.entity.ListType
 import com.myshoppinglist.data.local.entity.ShoppingItemEntity
 import com.myshoppinglist.ui.components.QuickAddBar
 import com.myshoppinglist.ui.viewmodel.CategoryGroup
@@ -87,11 +88,13 @@ fun ListDetailScreen(
     viewModel: ShoppingItemViewModel = hiltViewModel()
 ) {
     val listName by viewModel.listName.collectAsStateWithLifecycle()
+    val listType by viewModel.listType.collectAsStateWithLifecycle()
     val groupedItems by viewModel.groupedItems.collectAsStateWithLifecycle()
     val showAddDialog by viewModel.showAddDialog.collectAsStateWithLifecycle()
     val editingItem by viewModel.editingItem.collectAsStateWithLifecycle()
     val checkedCount by viewModel.checkedCount.collectAsStateWithLifecycle()
     val totalCount by viewModel.totalCount.collectAsStateWithLifecycle()
+    val categories = GroceryCategory.forListType(listType)
 
     var showMenu by remember { mutableStateOf(false) }
 
@@ -225,6 +228,7 @@ fun ListDetailScreen(
 
     if (showAddDialog) {
         AddItemDialog(
+            categories = categories,
             onDismiss = { viewModel.hideAddDialog() },
             onAdd = { name, qty, unit, category, notes ->
                 viewModel.addItem(name, qty, unit, category, notes)
@@ -235,6 +239,7 @@ fun ListDetailScreen(
     editingItem?.let { item ->
         EditItemDialog(
             item = item,
+            categories = categories,
             onDismiss = { viewModel.stopEditing() },
             onSave = { updated -> viewModel.updateItem(updated) }
         )
@@ -449,6 +454,7 @@ private fun formatQuantity(qty: Double): String {
 
 @Composable
 private fun AddItemDialog(
+    categories: List<GroceryCategory>,
     onDismiss: () -> Unit,
     onAdd: (String, Double, String, String, String) -> Unit
 ) {
@@ -507,7 +513,7 @@ private fun AddItemDialog(
                         expanded = showCategoryPicker,
                         onDismissRequest = { showCategoryPicker = false }
                     ) {
-                        GroceryCategory.entries.forEach { cat ->
+                        categories.forEach { cat ->
                             DropdownMenuItem(
                                 text = { Text(cat.displayName) },
                                 onClick = {
@@ -517,7 +523,6 @@ private fun AddItemDialog(
                             )
                         }
                     }
-                    // Invisible overlay to trigger the dropdown
                     Box(
                         modifier = Modifier
                             .matchParentSize()
@@ -561,6 +566,7 @@ private fun AddItemDialog(
 @Composable
 private fun EditItemDialog(
     item: ShoppingItemEntity,
+    categories: List<GroceryCategory>,
     onDismiss: () -> Unit,
     onSave: (ShoppingItemEntity) -> Unit
 ) {
@@ -617,7 +623,7 @@ private fun EditItemDialog(
                         expanded = showCategoryPicker,
                         onDismissRequest = { showCategoryPicker = false }
                     ) {
-                        GroceryCategory.entries.forEach { cat ->
+                        categories.forEach { cat ->
                             DropdownMenuItem(
                                 text = { Text(cat.displayName) },
                                 onClick = {

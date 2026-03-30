@@ -1,6 +1,5 @@
 package com.myshoppinglist.data.remote
 
-import com.myshoppinglist.ui.viewmodel.GroceryStore
 import com.myshoppinglist.ui.viewmodel.StoreProduct
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.functions.functions
@@ -14,7 +13,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Serializable
-data class GrocerySearchRequest(
+data class ProductSearchRequest(
     val query: String,
     val store: String,
     @SerialName("postal_code")
@@ -22,7 +21,7 @@ data class GrocerySearchRequest(
 )
 
 @Serializable
-data class GroceryProductResponse(
+data class ProductResponse(
     val id: String = "",
     val name: String = "",
     val brand: String = "",
@@ -39,30 +38,30 @@ data class GroceryProductResponse(
 )
 
 @Singleton
-class GrocerySearchService @Inject constructor(
+class ProductSearchService @Inject constructor(
     private val supabaseClient: SupabaseClient
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun searchProducts(
         query: String,
-        store: GroceryStore,
+        storeApiId: String,
         postalCode: String = ""
     ): List<StoreProduct> {
-        if (store == GroceryStore.NONE) return emptyList()
+        if (storeApiId.isBlank()) return emptyList()
 
         return try {
             val requestBody = json.encodeToString(
-                GrocerySearchRequest.serializer(),
-                GrocerySearchRequest(
+                ProductSearchRequest.serializer(),
+                ProductSearchRequest(
                     query = query,
-                    store = store.apiId,
+                    store = storeApiId,
                     postalCode = postalCode
                 )
             )
 
             val response = supabaseClient.functions.invoke(
-                function = "grocery-search",
+                function = "product-search",
                 body = requestBody,
                 headers = Headers.build {
                     append(HttpHeaders.ContentType, "application/json")
@@ -70,7 +69,7 @@ class GrocerySearchService @Inject constructor(
             )
 
             val responseBody: String = response.body()
-            val products = json.decodeFromString<List<GroceryProductResponse>>(responseBody)
+            val products = json.decodeFromString<List<ProductResponse>>(responseBody)
 
             products.map { product ->
                 StoreProduct(
@@ -85,7 +84,7 @@ class GrocerySearchService @Inject constructor(
                     storeName = product.storeName
                 )
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
     }

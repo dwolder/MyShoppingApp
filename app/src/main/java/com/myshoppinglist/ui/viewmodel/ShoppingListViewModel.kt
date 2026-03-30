@@ -2,6 +2,7 @@ package com.myshoppinglist.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.myshoppinglist.data.local.entity.ListType
 import com.myshoppinglist.data.local.entity.ShoppingListEntity
 import com.myshoppinglist.data.repository.ShoppingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,10 +28,10 @@ class ShoppingListViewModel @Inject constructor(
     fun showCreateDialog() { _showCreateDialog.value = true }
     fun hideCreateDialog() { _showCreateDialog.value = false }
 
-    fun createList(name: String) {
+    fun createList(name: String, listType: ListType = ListType.GROCERY) {
         if (name.isBlank()) return
         viewModelScope.launch {
-            repository.createList(name.trim())
+            repository.createList(name.trim(), listType)
             _showCreateDialog.value = false
         }
     }

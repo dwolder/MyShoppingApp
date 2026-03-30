@@ -2,6 +2,7 @@ package com.myshoppinglist.data.repository
 
 import com.myshoppinglist.data.local.dao.ShoppingItemDao
 import com.myshoppinglist.data.local.dao.ShoppingListDao
+import com.myshoppinglist.data.local.entity.ListType
 import com.myshoppinglist.data.local.entity.ShoppingItemEntity
 import com.myshoppinglist.data.local.entity.ShoppingListEntity
 import kotlinx.coroutines.flow.Flow
@@ -18,10 +19,11 @@ class ShoppingRepository @Inject constructor(
 
     suspend fun getListById(id: String): ShoppingListEntity? = listDao.getListById(id)
 
-    suspend fun createList(name: String): ShoppingListEntity {
+    suspend fun createList(name: String, listType: ListType = ListType.GROCERY): ShoppingListEntity {
         val list = ShoppingListEntity(
             id = UUID.randomUUID().toString(),
-            name = name
+            name = name,
+            listType = listType.name
         )
         listDao.insertList(list)
         return list

@@ -23,7 +23,9 @@ object DatabaseModule {
             context,
             ShoppingDatabase::class.java,
             "shopping_database"
-        ).build()
+        )
+            .addMigrations(ShoppingDatabase.MIGRATION_1_2)
+            .build()
     }
 
     @Provides

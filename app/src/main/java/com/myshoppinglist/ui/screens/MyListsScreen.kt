@@ -12,10 +12,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
@@ -23,6 +26,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,11 +45,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.myshoppinglist.data.local.entity.ListType
 import com.myshoppinglist.data.local.entity.ShoppingListEntity
 import com.myshoppinglist.ui.viewmodel.ShoppingListViewModel
 import java.text.SimpleDateFormat
@@ -66,7 +73,7 @@ fun MyListsScreen(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
-                title = { Text("My Shopping Lists") },
+                title = { Text("My Lists") },
                 scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(onClick = onNavigateToSettings) {
@@ -110,7 +117,7 @@ fun MyListsScreen(
     if (showCreateDialog) {
         CreateListDialog(
             onDismiss = { viewModel.hideCreateDialog() },
-            onCreate = { name -> viewModel.createList(name) }
+            onCreate = { name, type -> viewModel.createList(name, type) }
         )
     }
 }
@@ -130,7 +137,7 @@ private fun EmptyListsState(modifier: Modifier = Modifier) {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                "No shopping lists yet",
+                "No lists yet",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -144,6 +151,12 @@ private fun EmptyListsState(modifier: Modifier = Modifier) {
     }
 }
 
+private fun listTypeIcon(listType: ListType): ImageVector = when (listType) {
+    ListType.GROCERY -> Icons.Default.ShoppingCart
+    ListType.HOME_IMPROVEMENT -> Icons.Default.Build
+    ListType.GENERAL -> Icons.Default.Checklist
+}
+
 @Composable
 private fun ShoppingListCard(
     list: ShoppingListEntity,
@@ -152,6 +165,7 @@ private fun ShoppingListCard(
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
+    val type = ListType.fromName(list.listType)
 
     Card(
         onClick = onClick,
@@ -168,6 +182,13 @@ private fun ShoppingListCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Icon(
+                listTypeIcon(type),
+                contentDescription = type.displayName,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = list.name,
@@ -176,11 +197,18 @@ private fun ShoppingListCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Updated ${dateFormat.format(Date(list.updatedAt))}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = type.displayName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "  ·  Updated ${dateFormat.format(Date(list.updatedAt))}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             IconButton(onClick = { showDeleteConfirm = true }) {
                 Icon(
@@ -217,35 +245,70 @@ private fun ShoppingListCard(
 @Composable
 private fun CreateListDialog(
     onDismiss: () -> Unit,
-    onCreate: (String) -> Unit
+    onCreate: (String, ListType) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
+    var selectedType by remember { mutableStateOf(ListType.GROCERY) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Shopping List") },
+        title = { Text("New List") },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("List name") },
-                placeholder = { Text("e.g., Weekly Groceries") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("List name") },
+                    placeholder = {
+                        Text(
+                            when (selectedType) {
+                                ListType.GROCERY -> "e.g., Weekly Groceries"
+                                ListType.HOME_IMPROVEMENT -> "e.g., Kitchen Reno"
+                                ListType.GENERAL -> "e.g., Back to School"
+                            }
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    "List type",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ListType.entries.forEach { type ->
+                        FilterChip(
+                            selected = selectedType == type,
+                            onClick = { selectedType = type },
+                            label = { Text(type.displayName, style = MaterialTheme.typography.labelSmall) },
+                            leadingIcon = {
+                                Icon(
+                                    listTypeIcon(type),
+                                    null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                    }
+                }
+            }
         },
         confirmButton = {
             TextButton(
-                onClick = { onCreate(name) },
+                onClick = { onCreate(name, selectedType) },
                 enabled = name.isNotBlank()
             ) {
                 Text("Create")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }
