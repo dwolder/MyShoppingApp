@@ -1,5 +1,9 @@
 package com.myshoppinglist.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +26,8 @@ import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.Warning
@@ -33,6 +39,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
@@ -40,18 +47,23 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.myshoppinglist.data.local.entity.StoreInfo
 import com.myshoppinglist.ui.viewmodel.PriceComparison
-import com.myshoppinglist.ui.viewmodel.StoreProduct
 import com.myshoppinglist.ui.viewmodel.StoreProductGroup
 import com.myshoppinglist.ui.viewmodel.StoreSearchViewModel
 
@@ -59,6 +71,7 @@ import com.myshoppinglist.ui.viewmodel.StoreSearchViewModel
 @Composable
 fun StoreSearchScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToTripPlan: () -> Unit = {},
     viewModel: StoreSearchViewModel = hiltViewModel()
 ) {
     val comparisons by viewModel.comparisons.collectAsStateWithLifecycle()
@@ -67,8 +80,48 @@ fun StoreSearchScreen(
     val listType by viewModel.listType.collectAsStateWithLifecycle()
     val hasSearched by viewModel.hasSearched.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
+    val locationInfo by viewModel.locationInfo.collectAsStateWithLifecycle()
+    val locationFailed by viewModel.locationFailed.collectAsStateWithLifecycle()
+    val isTripLoading by viewModel.isTripLoading.collectAsStateWithLifecycle()
     val stores = StoreInfo.forListType(listType)
     val isConfigured = viewModel.isConfigured
+
+    val context = LocalContext.current
+    var permissionRequested by remember { mutableStateOf(false) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            viewModel.fetchLocation()
+        }
+        viewModel.compareAllStores()
+    }
+
+    LaunchedEffect(Unit) {
+        val hasPermission = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        if (hasPermission) {
+            viewModel.fetchLocation()
+        }
+    }
+
+    fun onCompareClick() {
+        val hasPermission = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (hasPermission) {
+            viewModel.fetchLocation()
+            viewModel.compareAllStores()
+        } else if (!permissionRequested) {
+            permissionRequested = true
+            permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        } else {
+            viewModel.compareAllStores()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -115,6 +168,57 @@ fun StoreSearchScreen(
                         colors = SuggestionChipDefaults.suggestionChipColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer
                         )
+                    )
+                }
+            }
+
+            if (locationInfo != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.MyLocation,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.tertiary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    val label = buildString {
+                        append("Near ")
+                        if (locationInfo!!.cityName.isNotBlank()) {
+                            append(locationInfo!!.cityName)
+                            append(" (${locationInfo!!.postalCode})")
+                        } else {
+                            append(locationInfo!!.postalCode)
+                        }
+                    }
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+            } else if (locationFailed && hasSearched) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.MyLocation,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Using default location",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     )
                 }
             }
@@ -180,7 +284,7 @@ fun StoreSearchScreen(
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        Button(onClick = { viewModel.compareAllStores() }) {
+                        Button(onClick = { onCompareClick() }) {
                             Text("Retry")
                         }
                     }
@@ -221,7 +325,7 @@ fun StoreSearchScreen(
                         )
                         if (listItems.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { viewModel.compareAllStores() }) {
+                            Button(onClick = { onCompareClick() }) {
                                 Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Compare ${listItems.count { !it.isChecked }} items across ${stores.size} stores")
@@ -259,6 +363,28 @@ fun StoreSearchScreen(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    item(key = "plan_trip_button") {
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.planTrip()
+                                onNavigateToTripPlan()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isTripLoading
+                        ) {
+                            if (isTripLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(Icons.Default.Map, null, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Plan Shopping Trip")
+                        }
+                    }
+
                     items(comparisons, key = { it.itemName }) { comparison ->
                         ComparisonCard(comparison)
                     }
@@ -270,8 +396,6 @@ fun StoreSearchScreen(
 
 @Composable
 private fun ComparisonCard(comparison: PriceComparison) {
-    val cheapestPrice = comparison.results.firstOrNull()?.bestPrice ?: Double.MAX_VALUE
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),

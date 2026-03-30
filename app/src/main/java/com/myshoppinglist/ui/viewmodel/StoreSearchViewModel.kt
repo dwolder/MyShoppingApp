@@ -6,7 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.myshoppinglist.data.local.entity.ListType
 import com.myshoppinglist.data.local.entity.ShoppingItemEntity
 import com.myshoppinglist.data.local.entity.StoreInfo
+import com.myshoppinglist.data.remote.LocationInfo
+import com.myshoppinglist.data.remote.LocationService
 import com.myshoppinglist.data.remote.ProductSearchService
+import com.myshoppinglist.data.remote.TripPlannerService
+import com.myshoppinglist.data.remote.TripPlanResponse
 import com.myshoppinglist.data.repository.ShoppingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
@@ -46,6 +50,8 @@ data class StoreProductGroup(
 class StoreSearchViewModel @Inject constructor(
     private val repository: ShoppingRepository,
     private val searchService: ProductSearchService,
+    private val locationService: LocationService,
+    private val tripPlannerService: TripPlannerService,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -70,6 +76,21 @@ class StoreSearchViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    private val _locationInfo = MutableStateFlow<LocationInfo?>(null)
+    val locationInfo: StateFlow<LocationInfo?> = _locationInfo.asStateFlow()
+
+    private val _locationFailed = MutableStateFlow(false)
+    val locationFailed: StateFlow<Boolean> = _locationFailed.asStateFlow()
+
+    private val _tripPlan = MutableStateFlow<TripPlanResponse?>(null)
+    val tripPlan: StateFlow<TripPlanResponse?> = _tripPlan.asStateFlow()
+
+    private val _isTripLoading = MutableStateFlow(false)
+    val isTripLoading: StateFlow<Boolean> = _isTripLoading.asStateFlow()
+
+    private val _tripError = MutableStateFlow<String?>(null)
+    val tripError: StateFlow<String?> = _tripError.asStateFlow()
+
     val isConfigured: Boolean
         get() = searchService.isConfigured()
 
@@ -82,6 +103,14 @@ class StoreSearchViewModel @Inject constructor(
         }
     }
 
+    fun fetchLocation() {
+        viewModelScope.launch {
+            val info = locationService.getLocation()
+            _locationInfo.value = info
+            _locationFailed.value = info == null
+        }
+    }
+
     fun compareAllStores() {
         val stores = StoreInfo.forListType(_listType.value)
         if (stores.isEmpty()) return
@@ -89,10 +118,12 @@ class StoreSearchViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             _comparisons.value = emptyList()
+            _tripPlan.value = null
             _hasSearched.value = true
             _errorMessage.value = null
 
             try {
+                val postalCode = _locationInfo.value?.postalCode ?: ""
                 val items = listItems.value.filter { !it.isChecked }
                 val results = mutableListOf<PriceComparison>()
 
@@ -102,7 +133,8 @@ class StoreSearchViewModel @Inject constructor(
                             try {
                                 val products = searchService.searchProducts(
                                     query = item.name,
-                                    storeApiId = store.apiId
+                                    storeApiId = store.apiId,
+                                    postalCode = postalCode
                                 )
                                 StoreProductGroup(
                                     store = store,
@@ -132,6 +164,25 @@ class StoreSearchViewModel @Inject constructor(
                 _errorMessage.value = e.message ?: "Search failed"
             } finally {
                 _isLoading.value = false
+            }
+        }
+    }
+
+    fun planTrip() {
+        val currentComparisons = _comparisons.value
+        if (currentComparisons.isEmpty()) return
+
+        viewModelScope.launch {
+            _isTripLoading.value = true
+            _tripError.value = null
+
+            try {
+                val plan = tripPlannerService.planTrip(currentComparisons)
+                _tripPlan.value = plan
+            } catch (e: Exception) {
+                _tripError.value = e.message ?: "Failed to generate trip plan"
+            } finally {
+                _isTripLoading.value = false
             }
         }
     }

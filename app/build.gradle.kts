@@ -96,6 +96,9 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
 
+    // Google Play Services Location
+    implementation(libs.play.services.location)
+
     // Kotlin Serialization
     implementation(libs.kotlinx.serialization.json)
 
