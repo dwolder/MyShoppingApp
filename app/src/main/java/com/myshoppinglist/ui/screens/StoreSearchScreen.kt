@@ -91,10 +91,7 @@ fun StoreSearchScreen(
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            viewModel.fetchLocation()
-        }
+    ) {
         viewModel.compareAllStores()
     }
 
@@ -112,14 +109,11 @@ fun StoreSearchScreen(
             context, Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
-        if (hasPermission) {
-            viewModel.fetchLocation()
+        if (hasPermission || permissionRequested) {
             viewModel.compareAllStores()
-        } else if (!permissionRequested) {
+        } else {
             permissionRequested = true
             permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
-        } else {
-            viewModel.compareAllStores()
         }
     }
 

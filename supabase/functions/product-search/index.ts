@@ -4,6 +4,7 @@ interface SearchRequest {
   query: string;
   store: string;
   postal_code?: string;
+  brand_preference?: string;
 }
 
 interface Product {
@@ -48,7 +49,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { query, store, postal_code }: SearchRequest = await req.json();
+    const { query, store, postal_code, brand_preference }: SearchRequest = await req.json();
 
     if (!query || !store) {
       return new Response(JSON.stringify({ error: "query and store are required" }), {
@@ -57,7 +58,8 @@ serve(async (req: Request) => {
       });
     }
 
-    const products = await searchFlipp(query, store, postal_code);
+    let products = await searchFlipp(query, store, postal_code);
+    products = applyBrandFilter(products, brand_preference);
 
     return new Response(JSON.stringify(products), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -173,4 +175,52 @@ function buildSizeString(item: Record<string, unknown>): string {
   if (item.post_price_text) parts.push(String(item.post_price_text));
   if (item.sale_story) parts.push(String(item.sale_story));
   return parts.join(" ").trim();
+}
+
+const STORE_BRAND_INDICATORS = [
+  "no name",
+  "great value",
+  "selection",
+  "irresistibles",
+  "compliments",
+  "pc ",
+  "president's choice",
+  "kirkland",
+  "exact",
+  "life brand",
+  "equate",
+  "our finest",
+  "green d",
+  "sensations by compliments",
+];
+
+function isStoreBrand(productName: string): boolean {
+  const lower = productName.toLowerCase();
+  return STORE_BRAND_INDICATORS.some((indicator) => lower.includes(indicator));
+}
+
+function applyBrandFilter(products: Product[], brandPreference?: string): Product[] {
+  if (!brandPreference || brandPreference === "ALL") {
+    return products;
+  }
+
+  if (brandPreference === "BRAND_NAME_ONLY") {
+    const filtered = products.filter((p) => !isStoreBrand(p.name));
+    return filtered.length > 0 ? filtered : products;
+  }
+
+  if (brandPreference === "GENERIC_PREFERRED") {
+    const store: Product[] = [];
+    const name: Product[] = [];
+    for (const p of products) {
+      if (isStoreBrand(p.name)) {
+        store.push(p);
+      } else {
+        name.push(p);
+      }
+    }
+    return [...store, ...name];
+  }
+
+  return products;
 }

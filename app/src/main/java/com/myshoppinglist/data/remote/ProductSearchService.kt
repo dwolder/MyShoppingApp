@@ -17,7 +17,9 @@ data class ProductSearchRequest(
     val query: String,
     val store: String,
     @SerialName("postal_code")
-    val postalCode: String = ""
+    val postalCode: String = "",
+    @SerialName("brand_preference")
+    val brandPreference: String = "ALL"
 )
 
 @Serializable
@@ -56,7 +58,8 @@ class ProductSearchService @Inject constructor(
     suspend fun searchProducts(
         query: String,
         storeApiId: String,
-        postalCode: String = ""
+        postalCode: String = "",
+        brandPreference: String = "ALL"
     ): List<StoreProduct> {
         if (storeApiId.isBlank()) return emptyList()
 
@@ -69,7 +72,8 @@ class ProductSearchService @Inject constructor(
             ProductSearchRequest(
                 query = query,
                 store = storeApiId,
-                postalCode = postalCode
+                postalCode = postalCode,
+                brandPreference = brandPreference
             )
         )
 

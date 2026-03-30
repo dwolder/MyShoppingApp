@@ -99,6 +99,9 @@ dependencies {
     // Google Play Services Location
     implementation(libs.play.services.location)
 
+    // DataStore Preferences
+    implementation(libs.datastore.preferences)
+
     // Kotlin Serialization
     implementation(libs.kotlinx.serialization.json)
 

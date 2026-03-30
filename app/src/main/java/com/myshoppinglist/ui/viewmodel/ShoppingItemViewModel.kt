@@ -6,15 +6,33 @@ import androidx.lifecycle.viewModelScope
 import com.myshoppinglist.data.local.entity.GroceryCategory
 import com.myshoppinglist.data.local.entity.ListType
 import com.myshoppinglist.data.local.entity.ShoppingItemEntity
+import com.myshoppinglist.data.local.entity.StoreInfo
+import com.myshoppinglist.data.remote.LocationService
+import com.myshoppinglist.data.remote.ProductSearchService
+import com.myshoppinglist.data.repository.BrandPreference
 import com.myshoppinglist.data.repository.ShoppingRepository
+import com.myshoppinglist.data.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.functions.functions
+import io.ktor.client.call.body
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import javax.inject.Inject
 
 data class CategoryGroup(
@@ -22,11 +40,31 @@ data class CategoryGroup(
     val items: List<ShoppingItemEntity>
 )
 
+@Serializable
+private data class SmartAddRequest(
+    val name: String,
+    val list_type: String,
+    val brand_preference: String,
+    val categories: List<String>
+)
+
+@Serializable
+private data class SmartAddResponse(
+    val category: String = "Other",
+    val search_tip: String = ""
+)
+
 @HiltViewModel
 class ShoppingItemViewModel @Inject constructor(
     private val repository: ShoppingRepository,
+    private val searchService: ProductSearchService,
+    private val locationService: LocationService,
+    private val preferencesRepository: UserPreferencesRepository,
+    private val supabaseClient: SupabaseClient,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     val listId: String = savedStateHandle.get<String>("listId")
         ?: throw IllegalArgumentException("listId required")
@@ -42,6 +80,9 @@ class ShoppingItemViewModel @Inject constructor(
 
     private val _editingItem = MutableStateFlow<ShoppingItemEntity?>(null)
     val editingItem: StateFlow<ShoppingItemEntity?> = _editingItem.asStateFlow()
+
+    private val _snackbarMessage = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val snackbarMessage: SharedFlow<String> = _snackbarMessage.asSharedFlow()
 
     val items: StateFlow<List<ShoppingItemEntity>> = repository.getItemsByListId(listId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -84,7 +125,7 @@ class ShoppingItemViewModel @Inject constructor(
     fun addItem(name: String, quantity: Double, unit: String, category: String, notes: String) {
         if (name.isBlank()) return
         viewModelScope.launch {
-            repository.addItem(
+            val item = repository.addItem(
                 listId = listId,
                 name = name.trim(),
                 quantity = quantity,
@@ -93,6 +134,86 @@ class ShoppingItemViewModel @Inject constructor(
                 notes = notes.trim()
             )
             _showAddDialog.value = false
+
+            if (searchService.isConfigured()) {
+                smartAddAndSearch(item)
+            }
+        }
+    }
+
+    private suspend fun smartAddAndSearch(item: ShoppingItemEntity) {
+        try {
+            val listType = _listType.value
+            val brandPref = preferencesRepository.brandPreference.first()
+            val categories = GroceryCategory.forListType(listType).map { it.displayName }
+
+            val smartResult = callSmartAdd(item.name, listType, brandPref, categories)
+
+            if (smartResult != null && smartResult.category != item.category) {
+                repository.updateItem(item.copy(category = smartResult.category))
+            }
+
+            val searchTerm = smartResult?.search_tip?.ifBlank { item.name } ?: item.name
+            val stores = StoreInfo.forListType(listType)
+            val postalCode = locationService.getLocation()?.postalCode ?: ""
+
+            val storeResults = stores.map { store ->
+                async {
+                    try {
+                        val products = searchService.searchProducts(
+                            query = searchTerm,
+                            storeApiId = store.apiId,
+                            postalCode = postalCode,
+                            brandPreference = brandPref.name
+                        )
+                        val bestPrice = products.minOfOrNull { it.salePrice ?: it.price }
+                        if (bestPrice != null) store.displayName to bestPrice else null
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+            }.awaitAll().filterNotNull()
+
+            if (storeResults.isNotEmpty()) {
+                val (cheapestStore, cheapestPrice) = storeResults.minBy { it.second }
+                _snackbarMessage.tryEmit(
+                    "${item.name}: $${String.format("%.2f", cheapestPrice)} at $cheapestStore"
+                )
+            }
+        } catch (_: Exception) {
+            // Item is saved regardless; silently ignore search/smart-add errors
+        }
+    }
+
+    private suspend fun callSmartAdd(
+        name: String,
+        listType: ListType,
+        brandPref: BrandPreference,
+        categories: List<String>
+    ): SmartAddResponse? {
+        return try {
+            val requestBody = json.encodeToString(
+                SmartAddRequest.serializer(),
+                SmartAddRequest(
+                    name = name,
+                    list_type = listType.name,
+                    brand_preference = brandPref.name,
+                    categories = categories
+                )
+            )
+
+            val response = supabaseClient.functions.invoke(
+                function = "smart-add",
+                body = requestBody,
+                headers = Headers.build {
+                    append(HttpHeaders.ContentType, "application/json")
+                }
+            )
+
+            val responseBody: String = response.body()
+            json.decodeFromString<SmartAddResponse>(responseBody)
+        } catch (_: Exception) {
+            null
         }
     }
 

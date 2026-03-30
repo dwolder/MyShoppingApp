@@ -12,6 +12,7 @@ import com.myshoppinglist.data.remote.ProductSearchService
 import com.myshoppinglist.data.remote.TripPlannerService
 import com.myshoppinglist.data.remote.TripPlanResponse
 import com.myshoppinglist.data.repository.ShoppingRepository
+import com.myshoppinglist.data.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -52,6 +54,7 @@ class StoreSearchViewModel @Inject constructor(
     private val searchService: ProductSearchService,
     private val locationService: LocationService,
     private val tripPlannerService: TripPlannerService,
+    private val preferencesRepository: UserPreferencesRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -123,7 +126,14 @@ class StoreSearchViewModel @Inject constructor(
             _errorMessage.value = null
 
             try {
-                val postalCode = _locationInfo.value?.postalCode ?: ""
+                val locationResult = locationService.getLocation()
+                if (locationResult != null) {
+                    _locationInfo.value = locationResult
+                } else {
+                    _locationFailed.value = true
+                }
+                val postalCode = locationResult?.postalCode ?: ""
+                val brandPref = preferencesRepository.brandPreference.first().name
                 val items = listItems.value.filter { !it.isChecked }
                 val results = mutableListOf<PriceComparison>()
 
@@ -134,7 +144,8 @@ class StoreSearchViewModel @Inject constructor(
                                 val products = searchService.searchProducts(
                                     query = item.name,
                                     storeApiId = store.apiId,
-                                    postalCode = postalCode
+                                    postalCode = postalCode,
+                                    brandPreference = brandPref
                                 )
                                 StoreProductGroup(
                                     store = store,
